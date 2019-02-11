@@ -119,6 +119,7 @@ MPU6050 mpu;
 
 
 #define LED_PIN 13 // (Arduino is 13, Teensy is 11, Teensy++ is 6)
+#include <SoftwareSerial.h>
 bool blinkState = false;
 
 // MPU control/status vars
@@ -138,10 +139,13 @@ VectorFloat gravity;    // [x, y, z]            gravity vector
 float euler[3];         // [psi, theta, phi]    Euler angle container
 float ypr[3];           // [yaw, pitch, roll]   yaw/pitch/roll container and gravity vector
 
+float emin[3];
+float emax[3];
+
 // packet structure for InvenSense teapot demo
 uint8_t teapotPacket[14] = { '$', 0x02, 0,0, 0,0, 0,0, 0,0, 0x00, 0x00, '\r', '\n' };
 
-
+SoftwareSerial blt(7,8);
 
 // ================================================================
 // ===               INTERRUPT DETECTION ROUTINE                ===
@@ -171,6 +175,7 @@ void setup() {
     // (115200 chosen because it is required for Teapot Demo output, but it's
     // really up to you depending on your project)
     Serial.begin(115200);
+    blt.begin(9600);
     while (!Serial); // wait for Leonardo enumeration, others continue immediately
 
     // NOTE: 8MHz or slower host processors, like the Teensy @ 3.3v or Ardunio
@@ -241,7 +246,28 @@ void setup() {
 // ===                    MAIN PROGRAM LOOP                     ===
 // ================================================================
 
+enum STATE
+{
+    RECORD, PAUSE, STOP
+};
+bool readState = true;
 void loop() {
+    if(blt.available())
+    {
+        if(blt.read() == 'y')
+            readState = true;
+        else if(blt.read() == 'n')
+        {
+            readState = false;
+            for(int i = 0; i<3; i++)
+            {
+                blt.print(emin[i]);
+                blt.print("\t");
+                blt.println(emax[i]);
+            }
+        }
+
+    }
     // if programming failed, don't try to do anything
     if (!dmpReady) return;
 
@@ -299,15 +325,23 @@ void loop() {
         #endif
 
         #ifdef OUTPUT_READABLE_EULER
+
+            if(!readState)
+                return;
             // display Euler angles in degrees
             mpu.dmpGetQuaternion(&q, fifoBuffer);
             mpu.dmpGetEuler(euler, &q);
-            Serial.print("euler\t");
-            Serial.print(euler[0] * 180/M_PI);
-            Serial.print("\t");
-            Serial.print(euler[1] * 180/M_PI);
-            Serial.print("\t");
-            Serial.println(euler[2] * 180/M_PI);
+            for(uint8_t i = 0; i < 3; i++)
+            {
+                emin[i] = min(euler[i], emin[i]);
+                emax[i] = max(euler[i], emin[i]);
+            }
+            // Serial.print("euler\t");
+            // Serial.print(euler[0] * 180/M_PI);
+            // Serial.print("\t");
+            // Serial.print(euler[1] * 180/M_PI);
+            // Serial.print("\t");
+            // Serial.println(euler[2] * 180/M_PI);
         #endif
 
         #ifdef OUTPUT_READABLE_YAWPITCHROLL
